@@ -2,12 +2,11 @@ from binascii import a2b_base64
 from math import log
 from turtle import forward
 import numpy as np
-import torchvision
-import torchvision.transforms as transforms
-from torch.utils.data import DataLoader
 import time
 import matplotlib.pyplot as plt
 import torch
+
+from data_loader import load_data
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -18,19 +17,6 @@ def softmax(x):  # define the softmax
     x = x - torch.max(x, axis=1, keepdims=True).values
     exp_x = torch.exp(x)
     return exp_x / torch.sum(exp_x, axis=1, keepdims=True)
-
-def dataloader(train_dataset, test_dataset, batch_size=128):
-    train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
-    return train_loader, test_loader
-
-def load_data(batch_size):
-    transform = transforms.Compose([transforms.ToTensor()])
-    train_dataset = torchvision.datasets.FashionMNIST(root="./data/mnist", train=True, download=True, transform=transform)
-    test_dataset = torchvision.datasets.FashionMNIST(root="./data/mnist", train=False, download=True, transform=transform)
-    print("The number of training data:", len(train_dataset))
-    print("The number of testing data:", len(test_dataset))
-    return dataloader(train_dataset, test_dataset, batch_size)
 
 class MLP:
     def __init__(self, input_size, hidden_size, a, lr):  # 
@@ -121,8 +107,7 @@ def main():
 
     # Second, define hyperparameters
     input_size = 28*28  # MNIST images are 28x28 pixels
-    num_epochs = 500
-
+    num_epochs = 150
     hidden_layer_size = 192
     num_classes = 10
     learning_rate = 0.09943822786021822
@@ -199,5 +184,5 @@ def main():
     plt.show()
 
 
-if __name__ == "__main__":  # Program entry
+if __name__ == "__main__":
     main()  
