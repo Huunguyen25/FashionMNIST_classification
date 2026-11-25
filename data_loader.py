@@ -1,15 +1,27 @@
 """Shared FashionMNIST data loading for the CNN and MLP."""
 
+import torch
 import torchvision
 import torchvision.transforms as transforms
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 
+
+# def dataloader(train_dataset, test_dataset, batch_size=64):
+#     """Create shuffled training batches and ordered test batches."""
+#     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
+#     test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
+#     return train_loader, test_loader
 
 def dataloader(train_dataset, test_dataset, batch_size=64):
-    """Create shuffled training batches and ordered test batches."""
-    train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
-    return train_loader, test_loader
+    train_data, val_data = random_split(
+        train_dataset,
+        [54000, 6000],
+        generator=torch.Generator().manual_seed(42)
+    )
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    return train_loader, val_loader, test_loader
 
 
 def load_data(batch_size=64, root="./data/mnist", download=True):

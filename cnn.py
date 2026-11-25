@@ -1,9 +1,15 @@
+from pathlib import Path
 import torch
 import time
-import matplotlib.pyplot as plt
 import math
-
 from data_loader import load_data
+
+from visualization import (
+    evaluate,
+    plot_sample_grid,
+    plot_learning_curves,
+    plot_confusion_matrix
+)
 
 # ===================== Utility Functions ===================== #
 def relu(x):
@@ -47,7 +53,6 @@ class CNN:
         batch_size, channel, H, W = x.shape
 
         z1 = torch.zeros(batch_size, self.num_filters, self.out_dim, self.out_dim, device=self.device)
-
         # for b in range(batch_size):
         #     for f in range(self.num_filters):
         #         for h in range(self.out_dim):
@@ -129,8 +134,11 @@ class CNN:
 
 # ===================== Training Process ===================== #
 def main():
+    output_dir = Path(__file__).resolve().parent / "result" / "cnn"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     # First, load data
-    train_loader, test_loader = load_data()
+    train_loader, val_loader, test_loader = load_data(batch_size=64)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu") 
     print(f"Using device: {device}")
@@ -151,7 +159,12 @@ def main():
     if device.type == "cuda":
         torch.cuda.synchronize()
     start_time = time.time()
+
     epoch_losses = []
+    train_losses = []
+    val_losses = []
+    train_accuracies = []
+    val_accuracies = []
 
     for epoch in range(num_epochs):
         total_loss = 0
@@ -159,11 +172,29 @@ def main():
             x = inputs.to(device)
             y = labels.to(device)
             loss = model.train(x, y)
-            total_loss += loss
+            total_loss += loss.detach() * labels.shape[0]
 
-        avg_epoch_loss = (total_loss / len(train_loader)).item()
+        avg_epoch_loss = (total_loss / len(train_loader.dataset)).item()
         epoch_losses.append(avg_epoch_loss)
-        print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_epoch_loss}") # print the loss for each epoch
+        train_loss, train_acc = evaluate(
+            model, train_loader, device, flatten=False
+        )
+        val_loss, val_acc = evaluate(
+            model, val_loader, device, flatten=False
+        )
+
+        train_losses.append(train_loss)
+        val_losses.append(val_loss)
+        train_accuracies.append(train_acc)
+        val_accuracies.append(val_acc)
+
+        print(
+            f"Epoch {epoch+1}, "
+            f"Train Loss: {train_loss:.4f}, "
+            f"Val Loss: {val_loss:.4f}, "
+            f"Train Accuracy: {train_acc:.4f}, "
+            f"Val Accuracy: {val_acc:.4f}"
+        )
     
     if device.type == "cuda":
         torch.cuda.synchronize()
@@ -175,35 +206,43 @@ def main():
         torch.cuda.synchronize()
     eval_start_time = time.time()
 
-    correct_pred = 0
-    total_pred = 0
-    for inputs, labels in test_loader:
-        x = inputs.to(device)
-        y = labels.to(device)
-        pred = model.forward(x)  # the model refers to the model that was trained during the training phase
-        predicted_labels = torch.argmax(pred, 1)
-        correct_pred += (predicted_labels == y).sum().item()
-        total_pred += len(labels)
-        
+    test_loss, test_acc, y_true, y_pred = evaluate(
+        model,
+        test_loader,
+        device,
+        flatten=False,
+        collect_predictions=True,
+    )
+
     if device.type == "cuda":
         torch.cuda.synchronize()
     eval_end_time = time.time()
     eval_time = eval_end_time - eval_start_time
 
-    print(f"Test Accuracy: {correct_pred/total_pred}")
+    print(f"Test Loss: {test_loss:.4f}")
+    print(f"Test Accuracy: {test_acc * 100:.2f}%")
     print(f"Total evaluation time: {eval_time:.2f} seconds")
     total_elapsed_time = training_time + eval_time
     print(f"Total time (training + evaluation): {total_elapsed_time:.2f} seconds")
 
-    plt.figure(figsize=(8, 5))
-    plt.plot(range(1, num_epochs + 1), epoch_losses, marker="o")
-    plt.title("CNN Training Loss")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.grid(True, linestyle="--", alpha=0.5)
-    plt.tight_layout()
-    plt.savefig("cnn_training_loss.png")
-    plt.show()
+    plot_sample_grid(
+        train_loader.dataset,
+        save_path=output_dir / "fashionmnist_samples.png",
+    )
+    plot_learning_curves(
+        train_losses,
+        val_losses,
+        train_accuracies,
+        val_accuracies,
+        "CNN",
+        output_dir / "cnn_learning_curves.png",
+    )
+    plot_confusion_matrix(
+        y_true,
+        y_pred,
+        "CNN",
+        output_dir / "cnn_confusion_matrix.png",
+    )
 
 if __name__ == "__main__":
     main()

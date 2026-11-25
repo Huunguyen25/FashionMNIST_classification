@@ -1,12 +1,18 @@
+from pathlib import Path
 from binascii import a2b_base64
 from math import log
 from turtle import forward
 import numpy as np
 import time
-import matplotlib.pyplot as plt
 import torch
 
 from data_loader import load_data
+from visualization import (
+    evaluate,
+    plot_sample_grid,
+    plot_learning_curves,
+    plot_confusion_matrix,
+)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -92,12 +98,15 @@ class MLP:
         # call backward function
         self.backward(x, y, output)
         
-        return loss.item()
+        return loss
 
 def main():
+    output_dir = Path(__file__).resolve().parent / "result" / "mlp"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     batch_size = 64
     # First, load data
-    train_loader, test_loader = load_data(batch_size)
+    train_loader, val_loader, test_loader = load_data(batch_size)
     images, labels = next(iter(train_loader))
 
     print("Image batch shape:", images.shape)
@@ -121,6 +130,10 @@ def main():
 
     start_time = time.time()
     epoch_losses = []
+    train_losses = []
+    val_losses = []
+    train_accuracies = []
+    val_accuracies = []
     for epoch in range(num_epochs):
         total_loss = 0
 
@@ -134,11 +147,29 @@ def main():
             y.scatter_(1, y_labels.unsqueeze(1), 1.0)
 
             loss = model.train(x,y)
-            total_loss += loss
+            total_loss += loss.detach() * labels.shape[0]
 
-        avg_epoch_loss = total_loss / len(train_loader)
+        avg_epoch_loss = (total_loss / len(train_loader.dataset)).item()
         epoch_losses.append(avg_epoch_loss)
-        print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_epoch_loss}") # print the loss for each epoch
+        train_loss, train_acc = evaluate(
+            model, train_loader, device, flatten=True
+        )
+        val_loss, val_acc = evaluate(
+            model, val_loader, device, flatten=True
+        )
+
+        train_losses.append(train_loss)
+        val_losses.append(val_loss)
+        train_accuracies.append(train_acc)
+        val_accuracies.append(val_acc)
+
+        print(
+            f"Epoch {epoch+1}, "
+            f"Train Loss: {train_loss:.4f}, "
+            f"Val Loss: {val_loss:.4f}, "
+            f"Train Accuracy: {train_acc:.4f}, "
+            f"Val Accuracy: {val_acc:.4f}"
+        )
 
     if device.type == "cuda":
         torch.cuda.synchronize()
@@ -148,40 +179,48 @@ def main():
     print(f"Total training time: {training_time:.2f} seconds")
  
     # Finally, evaluate the model
-    correct_pred = 0
-    total_pred = 0
 
     if device.type == "cuda":
         torch.cuda.synchronize()
     eval_start_time = time.time()
 
-    for inputs, labels in test_loader:
-        x = inputs.view(-1, input_size).to(device)
-        y = labels.to(device)
-        pred = model.forward(x)  # the model refers to the model that was trained during the training phase
-        predicted_labels = torch.argmax(pred, 1)
-        correct_pred += (predicted_labels == y).sum().item()
-        total_pred += len(labels)
+    test_loss, test_acc, y_true, y_pred = evaluate(
+        model,
+        test_loader,
+        device,
+        flatten=True,
+        collect_predictions=True,
+    )
 
     if device.type == "cuda":
         torch.cuda.synchronize()
     eval_end_time = time.time()
     eval_time = eval_end_time - eval_start_time
-    print(f"Test Accuracy: {correct_pred/total_pred}")
+    print(f"Test Loss: {test_loss:.4f}")
+    print(f"Test Accuracy: {test_acc * 100:.2f}%")
     print(f"Total evaluation time: {eval_time:.2f} seconds")
     
     total_elapsed_time = training_time + eval_time
     print(f"Total time (training + evaluation): {total_elapsed_time:.2f} seconds")
 
-    plt.figure(figsize=(8, 5))
-    plt.plot(range(1, num_epochs + 1), epoch_losses, marker="o")
-    plt.title("MLP Training Loss")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.grid(True, linestyle="--", alpha=0.5)
-    plt.tight_layout()
-    plt.savefig("mlp_training_loss.png")
-    plt.show()
+    plot_sample_grid(
+        train_loader.dataset,
+        save_path=output_dir / "fashionmnist_samples.png",
+    )
+    plot_learning_curves(
+        train_losses,
+        val_losses,
+        train_accuracies,
+        val_accuracies,
+        "MLP",
+        output_dir / "mlp_learning_curves.png",
+    )
+    plot_confusion_matrix(
+        y_true,
+        y_pred,
+        "MLP",
+        output_dir / "mlp_confusion_matrix.png",
+    )
 
 
 if __name__ == "__main__":
