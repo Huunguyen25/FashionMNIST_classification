@@ -93,8 +93,9 @@ class MLP:
         # calculate loss,
         # 1e-12 avoid log(0)
         epsilon = 1e-12
-        output = torch.clamp(output, epsilon, 1-epsilon)
-        loss = torch.mean(-torch.sum(y*torch.log(output), axis=1))
+        output = torch.log(output.clamp(epsilon, 1-epsilon))
+        loss = torch.mean(-torch.sum(y * output, dim=1))
+
         # call backward function
         self.backward(x, y, output)
         
@@ -125,11 +126,9 @@ def main():
     # model object here
     model = MLP(input_size=input_size, hidden_size=hidden_layer_size, a=num_classes, lr=learning_rate)
 
-    # Then, train the model
-    if device.type == "cuda":
-        torch.cuda.synchronize()
-
-    start_time = time.time()
+    # Measure weight updates separately from per-epoch evaluation.
+    training_time = 0.0
+    monitoring_time = 0.0
     epoch_losses = []
     train_losses = []
     val_losses = []
@@ -143,6 +142,10 @@ def main():
     best_epoch = 0
     epochs_without_improvement = 0
     for epoch in range(num_epochs):
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        train_start = time.perf_counter()
+
         total_loss = 0
 
         for inputs, labels in train_loader:  # define training phase for training model
@@ -157,14 +160,26 @@ def main():
             loss = model.train(x,y)
             total_loss += loss.detach() * labels.shape[0]
 
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        training_time += time.perf_counter() - train_start
+
         avg_epoch_loss = (total_loss / len(train_loader.dataset)).item()
         epoch_losses.append(avg_epoch_loss)
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        monitor_start = time.perf_counter()
+
         train_loss, train_acc = evaluate(
             model, train_loader, device, flatten=True
         )
         val_loss, val_acc = evaluate(
             model, val_loader, device, flatten=True
         )
+
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        monitoring_time += time.perf_counter() - monitor_start
 
         train_losses.append(train_loss)
         val_losses.append(val_loss)
@@ -194,12 +209,8 @@ def main():
                 break
 
 
-    if device.type == "cuda":
-        torch.cuda.synchronize()
-
-    end_time = time.time()
-    training_time = end_time - start_time
-    print(f"Total training time: {training_time:.2f} seconds")
+    print(f"Training time: {training_time:.2f}s")
+    print(f"Monitoring time: {monitoring_time:.2f}s")
  
     # Finally, evaluate the model
 
@@ -229,8 +240,8 @@ def main():
     print(f"Test Accuracy: {test_acc * 100:.2f}%")
     print(f"Total evaluation time: {eval_time:.2f} seconds")
     
-    total_elapsed_time = training_time + eval_time
-    print(f"Total time (training + evaluation): {total_elapsed_time:.2f} seconds")
+    total_elapsed_time = training_time + monitoring_time + eval_time
+    print(f"Total time (training + monitoring + test evaluation): {total_elapsed_time:.2f} seconds")
 
     plot_sample_grid(
         train_loader.dataset,
