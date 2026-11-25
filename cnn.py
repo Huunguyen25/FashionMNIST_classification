@@ -131,7 +131,6 @@ class CNN:
         # call backward function
         self.backward(y, outputs)
         return loss
-
 # ===================== Training Process ===================== #
 def main():
     output_dir = Path(__file__).resolve().parent / "result" / "cnn"
@@ -147,7 +146,8 @@ def main():
 
     # Second, define hyperparameters
     input_size = 28
-    num_epochs = 10
+    num_epochs = 150
+    patience = 10
     num_filters = 8
     kernel_size = 3
     fc_output_size = 10
@@ -165,6 +165,13 @@ def main():
     val_losses = []
     train_accuracies = []
     val_accuracies = []
+
+    # Keep an independent copy of the weights with the lowest validation loss.
+    parameter_names = ('kernel', 'w2', 'b2')
+    best_val_loss = float("inf")
+    best_weights = None
+    best_epoch = 0
+    epochs_without_improvement = 0
 
     for epoch in range(num_epochs):
         total_loss = 0
@@ -195,6 +202,21 @@ def main():
             f"Train Accuracy: {train_acc:.4f}, "
             f"Val Accuracy: {val_acc:.4f}"
         )
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_epoch = epoch + 1
+            best_weights = {
+                name: getattr(model, name).detach().clone()
+                for name in parameter_names
+            }
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= patience:
+                print(f"Early stopping after {epoch + 1} epochs.")
+                break
+
     
     if device.type == "cuda":
         torch.cuda.synchronize()
@@ -204,6 +226,12 @@ def main():
     
     if device.type == "cuda":
         torch.cuda.synchronize()
+    if best_weights is None:
+        raise RuntimeError("No finite validation loss; cannot select a best model.")
+    for name, weights in best_weights.items():
+        setattr(model, name, weights)
+    print(f"Restored epoch {best_epoch} (validation loss: {best_val_loss:.4f}).")
+
     eval_start_time = time.time()
 
     test_loss, test_acc, y_true, y_pred = evaluate(

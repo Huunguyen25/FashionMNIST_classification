@@ -117,6 +117,7 @@ def main():
     # Second, define hyperparameters
     input_size = 28*28  # MNIST images are 28x28 pixels
     num_epochs = 150
+    patience = 10
     hidden_layer_size = 192
     num_classes = 10
     learning_rate = 0.09943822786021822
@@ -134,6 +135,13 @@ def main():
     val_losses = []
     train_accuracies = []
     val_accuracies = []
+
+    # Keep an independent copy of the weights with the lowest validation loss.
+    parameter_names = ('Weight1', 'bias1', 'Weight2', 'bias2')
+    best_val_loss = float("inf")
+    best_weights = None
+    best_epoch = 0
+    epochs_without_improvement = 0
     for epoch in range(num_epochs):
         total_loss = 0
 
@@ -171,6 +179,21 @@ def main():
             f"Val Accuracy: {val_acc:.4f}"
         )
 
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_epoch = epoch + 1
+            best_weights = {
+                name: getattr(model, name).detach().clone()
+                for name in parameter_names
+            }
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= patience:
+                print(f"Early stopping after {epoch + 1} epochs.")
+                break
+
+
     if device.type == "cuda":
         torch.cuda.synchronize()
 
@@ -182,6 +205,12 @@ def main():
 
     if device.type == "cuda":
         torch.cuda.synchronize()
+    if best_weights is None:
+        raise RuntimeError("No finite validation loss; cannot select a best model.")
+    for name, weights in best_weights.items():
+        setattr(model, name, weights)
+    print(f"Restored epoch {best_epoch} (validation loss: {best_val_loss:.4f}).")
+
     eval_start_time = time.time()
 
     test_loss, test_acc, y_true, y_pred = evaluate(
