@@ -11,46 +11,51 @@ from visualization import (
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def sigmoid(x):  # manually define the sigmoid
-    return 1/(1 + torch.exp(-x))
 
-def softmax(x):  # define the softmax 
+def sigmoid(x):  # manually define the sigmoid
+    return 1 / (1 + torch.exp(-x))
+
+
+def softmax(x):  # define the softmax
     x = x - torch.max(x, axis=1, keepdims=True).values
     exp_x = torch.exp(x)
     return exp_x / torch.sum(exp_x, axis=1, keepdims=True)
 
+
 class MLP:
-    def __init__(self, input_size, hidden_size, a, lr):  # 
-        
+    def __init__(self, input_size, hidden_size, a, lr):  #
+
         self.lr = lr
-        
+
         self.Weight1 = torch.randn(hidden_size, input_size, device=device) * 0.01
         self.bias1 = torch.zeros((hidden_size, 1), device=device)
         self.Weight2 = torch.randn(a, hidden_size, device=device) * 0.01
-        self.bias2 = torch.zeros((a, 1), device=device)    
-        
+        self.bias2 = torch.zeros((a, 1), device=device)
+
         self.z1 = None
         self.a1 = None
         self.z2 = None
-    
+
     def forward(self, x):  # forward propagation to get predictions
         # z = W * a + b
         # a = g(z)
-        z1 = (x @ self.Weight1.T) + self.bias1.T # self.bias1 * 1^T: in lecture multiply by transposed 1 matrix
+        z1 = (
+            x @ self.Weight1.T
+        ) + self.bias1.T  # self.bias1 * 1^T: in lecture multiply by transposed 1 matrix
         a1 = sigmoid(z1)
-        
+
         z2 = (a1 @ self.Weight2.T) + self.bias2.T
-        outputs = softmax(z2) 
-        
+        outputs = softmax(z2)
+
         self.z1 = z1
-        self.a1 = a1 
+        self.a1 = a1
         self.z2 = z2
-        
+
         # 10 by 128 vector
         # rows of class guesses x 128 images per batch
         return outputs
-    
-    # pred = output from forward 
+
+    # pred = output from forward
     # y = true labels
     # x = input (128 by 784 matrix)
     def backward(self, x, y, pred):
@@ -58,43 +63,43 @@ class MLP:
         # one-hot encode the labels
 
         # compute the gradients
-        
+
         # CE + softmax loss function derivation result in y^ - y
         # dZ2 is guess - true class
         dz2 = pred - y
-        #updated weight of second layer
-        #dW^(l) = dZ^(l) * A^(l-1)^T
+        # updated weight of second layer
+        # dW^(l) = dZ^(l) * A^(l-1)^T
         dw2 = (dz2.T @ self.a1) / batch_size
-        #updated bias of second layer
+        # updated bias of second layer
         db2 = torch.sum(dz2, axis=0, keepdims=True).T / batch_size
-        #dA^(l-1) = W^(l) * dZ^(l)
+        # dA^(l-1) = W^(l) * dZ^(l)
         dA1 = dz2 @ self.Weight2
 
-        dz1 = (self.a1 * (1-self.a1)) * dA1
+        dz1 = (self.a1 * (1 - self.a1)) * dA1
         dw1 = (dz1.T @ x) / batch_size
         db1 = torch.sum(dz1, axis=0, keepdims=True).T / batch_size
-        
+
         # update the weights and biases
         self.Weight2 -= self.lr * dw2
-        self.bias2 -= self.lr *db2
-        
+        self.bias2 -= self.lr * db2
+
         self.Weight1 -= self.lr * dw1
         self.bias1 -= self.lr * db1
-        
 
-    def train(self, x,y):
+    def train(self, x, y):
         # call forward function
         output = self.forward(x)
         # calculate loss,
         # 1e-12 avoid log(0)
         epsilon = 1e-12
-        output = torch.log(output.clamp(epsilon, 1-epsilon))
-        loss = torch.mean(-torch.sum(y * output, dim=1))
+        log_output = torch.log(output.clamp(epsilon, 1 - epsilon))
+        loss = torch.mean(-torch.sum(y * log_output, dim=1))
 
         # call backward function
         self.backward(x, y, output)
-        
+
         return loss
+
 
 def main():
     output_dir = Path(__file__).resolve().parent / "result" / "mlp"
@@ -111,7 +116,7 @@ def main():
     print("First 10 labels:", labels[:10])
 
     # Second, define hyperparameters
-    input_size = 28*28  # MNIST images are 28x28 pixels
+    input_size = 28 * 28  # MNIST images are 28x28 pixels
     num_epochs = 150
     patience = 10
     hidden_layer_size = 192
@@ -119,7 +124,12 @@ def main():
     learning_rate = 0.09943822786021822
 
     # model object here
-    model = MLP(input_size=input_size, hidden_size=hidden_layer_size, a=num_classes, lr=learning_rate)
+    model = MLP(
+        input_size=input_size,
+        hidden_size=hidden_layer_size,
+        a=num_classes,
+        lr=learning_rate,
+    )
 
     # Measure weight updates separately from per-epoch evaluation.
     training_time = 0.0
@@ -131,7 +141,7 @@ def main():
     val_accuracies = []
 
     # Keep an independent copy of the weights with the lowest validation loss.
-    parameter_names = ('Weight1', 'bias1', 'Weight2', 'bias2')
+    parameter_names = ("Weight1", "bias1", "Weight2", "bias2")
     best_val_loss = float("inf")
     best_weights = None
     best_epoch = 0
@@ -152,7 +162,7 @@ def main():
             y = torch.zeros(batch_size, num_classes, device=device)
             y.scatter_(1, y_labels.unsqueeze(1), 1.0)
 
-            loss = model.train(x,y)
+            loss = model.train(x, y)
             total_loss += loss.detach() * labels.shape[0]
 
         if device.type == "cuda":
@@ -165,12 +175,8 @@ def main():
             torch.cuda.synchronize()
         monitor_start = time.perf_counter()
 
-        train_loss, train_acc = evaluate(
-            model, train_loader, device, flatten=True
-        )
-        val_loss, val_acc = evaluate(
-            model, val_loader, device, flatten=True
-        )
+        train_loss, train_acc = evaluate(model, train_loader, device, flatten=True)
+        val_loss, val_acc = evaluate(model, val_loader, device, flatten=True)
 
         if device.type == "cuda":
             torch.cuda.synchronize()
@@ -193,8 +199,7 @@ def main():
             best_val_loss = val_loss
             best_epoch = epoch + 1
             best_weights = {
-                name: getattr(model, name).detach().clone()
-                for name in parameter_names
+                name: getattr(model, name).detach().clone() for name in parameter_names
             }
             epochs_without_improvement = 0
         else:
@@ -203,10 +208,9 @@ def main():
                 print(f"Early stopping after {epoch + 1} epochs.")
                 break
 
-
     print(f"Training time: {training_time:.2f}s")
     print(f"Monitoring time: {monitoring_time:.2f}s")
- 
+
     # Finally, evaluate the model
 
     if device.type == "cuda":
@@ -234,9 +238,11 @@ def main():
     print(f"Test Loss: {test_loss:.4f}")
     print(f"Test Accuracy: {test_acc * 100:.2f}%")
     print(f"Total evaluation time: {eval_time:.2f} seconds")
-    
+
     total_elapsed_time = training_time + monitoring_time + eval_time
-    print(f"Total time (training + monitoring + test evaluation): {total_elapsed_time:.2f} seconds")
+    print(
+        f"Total time (training + monitoring + test evaluation): {total_elapsed_time:.2f} seconds"
+    )
 
     plot_sample_grid(
         train_loader.dataset,
@@ -259,4 +265,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()  
+    main()
